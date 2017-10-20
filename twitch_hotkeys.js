@@ -13,6 +13,7 @@ add LoL creep team counters based on ocr
 add quality up/down options shortcuts cmd up/down, windows??
 
 onload set highest quality once
+if fullscreen disable space pauce hotkey
 */
 
 (function() {
