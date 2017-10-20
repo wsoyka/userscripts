@@ -11,7 +11,8 @@
 /* TODO
 add LoL creep team counters based on ocr
 add quality up/down options shortcuts cmd up/down, windows??
-hide pbrText when speed = 1
+
+onload set highest quality once
 */
 
 (function() {
