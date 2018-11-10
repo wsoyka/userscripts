@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HTML5 Video Controls
 // @namespace    none
-// @version      0.30
+// @version      0.31
 // @description  add hotkeys and other functionality to html5 video players
 // @author       Wolfram Soyka
 
