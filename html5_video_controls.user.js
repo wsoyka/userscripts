@@ -14,10 +14,6 @@
 
 // @require      https://cdnjs.cloudflare.com/ajax/libs/mousetrap/1.6.1/mousetrap.min.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js
-//no longer required // @require		 https://cdnjs.cloudflare.com/ajax/libs/izitoast/1.1.5/js/iziToast.min.js
-
-// @require      file:///Users/Wolfram/Dropbox/Wolfram/dev/html5_video_controls.js
-// @require      file://C:\Users\Mesh\Dropbox\Wolfram\dev\html5_video_controls.js
 
 // @grant    	 GM_addStyle
 
