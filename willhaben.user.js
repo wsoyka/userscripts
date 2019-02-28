@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Willhaben
 // @version      0.2
-// @description  Automatically adds Sorting, Area and Rows to Willhaben.at
+// @description  Automatically adds Sorting, Area and Rows params to Willhaben.at search queries
 // @author       Wolfram Soyka
 // @match        http*://*.willhaben.at/iad/kaufen-und-verkaufen/martkplatz/*
 // @grant        none
@@ -17,13 +17,6 @@
     var rows = "100";
     var sort = "3"; //3 = preis aufsteigend
 
-    //only run on marketplace
-
-    //ran into issues on these pages
-    if(window.location.href.includes("contactadvertiser/confirmation")){
-        console.log("Willhaben: No sorting here");
-        return;
-    }
     //check if there even are GET params in the url
     if (window.location.search.length > 0) {
         //if theres no keyword in url, we probably havent changed the url for that keyword
