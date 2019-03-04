@@ -4,7 +4,7 @@
 // @description  Automatically adds Sorting, Area and Rows params to Willhaben.at search queries
 // @author       Wolfram Soyka
 // @namespace    https://github.com/wsoyka/userscripts/raw/master/willhaben.user.js
-// @match        http*://*.willhaben.at/iad/kaufen-und-verkaufen/martkplatz/*
+// @match        http*://*.willhaben.at/iad/kaufen-und-verkaufen/marktplatz*
 // @grant        none
 // ==/UserScript==
 
