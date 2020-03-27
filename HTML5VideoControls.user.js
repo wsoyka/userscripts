@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HTML5 Video Controls
 // @namespace    https://github.com/wsoyka/userscripts/raw/master/html5_video_controls.user.js
-// @version      0.36
+// @version      0.38
 // @description  add hotkeys and other functionality to html5 video players
 // @author       Wolfram Soyka
 
@@ -10,6 +10,7 @@
 // @match        http*://*.youtube.com/*
 // @match        http*://*.golem.de/*
 // @match 		 http*://*.ltcc.tuwien.ac.at/*
+// @match        http*://*.vimeo.com/*
 // @match        https://tvthek.orf.at/*
 // @match 		 http*://*
 
@@ -40,16 +41,13 @@ the player will work, but the volume slider will be left where it was before the
 */
 
 //JSHint Config
-/*globals $:false, iziToast:false, console:false, Mousetrap:false, GM_addStyle:false */
+/*globals $:false, console:false, Mousetrap:false, GM_addStyle:false */
 
 /* TODO
-netflix compatibility broken
 add quality up/down options shortcuts cmd up/down, windows?? --> cant find quality options for twitch
 netflix enable subtitles (iterate through) --> netflix controls seem to be in the shadow dom, no access
 netflix switch audio language (iterate)
 twitch player has a play button centered, increase click area to whole player? otherwise the button cancels out the fullscreenpp
-per site config: netflix, twitch, youtube
-use config
 */
 
 'use strict';
@@ -58,7 +56,6 @@ use config
 site: set by script, used to decide what preconfig to use for known sites
 volumeControl: enable shortcuts for volume control
 playbackRateCOntrol: enable shortcuts for playbackRate (Speed) control
-playPauseOnClick: clicking anywhere on player plays/pauses
 forceFocusPlayer: repeatedly focus player. many players actually do have many shortcuts implemented but only if the player is focused
 forceFocusPlayerInterval: interval that player is given focus in ms
 	TODO forceFocus has to not do anything if a text input is selected
@@ -66,10 +63,6 @@ maxSpeed: max playbackrate, default is 16. Players will stop playing sound at 4.
 minSpeed: min playbackrate, values below 0 are ignored by players
 showDefaultPbr wether or not to show the default playback rate of 1.00
 debug: print messages to console
-notifications: show notifications
-notiOptions: 	position: iziToast position where notifications are to be displayed
-				timeout:  how long notifications are shown in ms
-				timeBetween: delay between each notification in ms. advised to be either 0 or >300
 version: script version
 name: name of script, used as console logging prefix
 shortctus for controls:
@@ -88,59 +81,39 @@ var config = {
         fullscreen: ["f"],
         mute: ["m"],
         playpause: ["space"],
-        netflixSkipIntro: ["s"],
-        netflixNext: ["n"],
+        netflixNext: ["n"], //TODO wip, probably only works during episode, not at end
     },
-    playPauseOnClick:true,
-    forceFocusPlayer:true,
-    forceFocusPlayerInterval:1000,
+    getPlayerInitialDelay: 2000,
+    getPlayerRefreshDelay: 300,
+    getPlayerMaxTries: 3000,
+    /*forceFocusPlayer:true,
+    forceFocusPlayerInterval:1000,*/
     maxSpeed: 16,
     minSpeed: 0,
     showDefaultPbr: true,
     debug:true,
-    notifications:true,
-    notiOptions:  {
-        position: 'topLeft',
-        timeout: 2500,
-        timeBetween: 300
-    },
-    version:0.30,
     name: 'HTML5 Player Controls'
 };
 
-// iziToast Notification Defaults (izitoast.marcelodolce.com/#Options)
-var notifDefaults = {
-    timeout: config.notiOptions.timeout , // default timeout
-    animateInside: true,
-    close: false,
-    progressBar: false,
-    position: config.notiOptions.position // bottomRight, bottomLeft, topRight, topLeft, topCenter, bottomCenter, center
-};
-
-var myPlayer = null, pbrPanel, lastNotif;
-var notifQ = [];
+var myPlayer = null, pbrPanel;
 const L_ERROR = 1; const L_WARN = 2; const L_SUCCESS = 3; const L_INFO = 4; const L_DEBUG = 5;
 
 /* try to get videoplayers */
 function getPlayer(){
-
-    if(config.site==="tvthek"){
-        alert("asdasd");
-        myPlayer = $(".video_wrapper>video");//leave as jquery obj for now
-        if (myPlayer.length > 0){ //check if a player has already been added to DOM
-            if (myPlayer[0].readyState === 4) { //check if its ready (in plain js)
-                myPlayer = $("video:first-of-type")[0]; //make vanilla obj
-                return true;
-            }
-        }
+    //TODO instead, check event onplaying for all video elements of a site, focus the playing one.
+    var selector = "";
+    if(config.site==='tvthek'){
+        selector = ".video_wrapper video";
     } else {
-        myPlayer = $("video:first-of-type");//leave as jquery obj for now
-        if (myPlayer.length > 0){ //check if a player has already been added to DOM
-            if (myPlayer[0].readyState === 4) { //check if its ready (in plain js)
-                myPlayer = $("video:first-of-type")[0]; //make vanilla obj
-                return true;
-            }
-        }}
+        selector = "video:first-of-type";
+    }
+    myPlayer = $(selector); //leave as jquery obj for now
+    if (myPlayer.length > 0){ //check if a player has already been added to DOM
+        if (myPlayer[0].readyState === 4) { //check if its ready (in plain js)
+            myPlayer = myPlayer[0]; //make vanilla obj
+            return true;
+        }
+    }
     myPlayer = null;
     return false;
 }
@@ -152,30 +125,6 @@ function sleep(ms) {
 
 /* Wait for player and do other setup tasks*/
 async function setUp(){
-    $("head").append ('<link href="//cdnjs.cloudflare.com/ajax/libs/izitoast/1.1.5/css/iziToast.min.css" rel="stylesheet" type="text/css">');
-    //await sleep(3000);
-    //iziToast.settings(notifDefaults); //doesnt work at least on netflix, propably also not on youtube
-    if(config.notiOptions.timeBetween > 0){workNotifQ();}
-
-    var tries = 0;
-    var checkForPlayerDelay = 200;
-
-    //TODO also trigger this on history state change
-    while(!getPlayer() && tries < 300000){
-        //log("didnt find video element yet, sleeping", L_INFO);
-        tries++;
-        await sleep(checkForPlayerDelay);
-    }
-    if(myPlayer == null){
-        log("No video element was ever found.", L_ERROR);
-        throw new Error('No video element was ever found');
-    }
-    log("Got Videoplayer", L_SUCCESS);
-    apply_fixes();
-    //log("Applied fixes", L_SUCCESS);
-}
-
-function apply_fixes(){
     //Set current site if known
     var loc = window.location.hostname;
     if(loc.includes("twitch.tv")) {
@@ -189,18 +138,35 @@ function apply_fixes(){
     }
     log("Site matched: " + config.site);
 
+    await sleep(config.getPlayerInitialDelay);
+
+    var tries = 0;
+    var checkForPlayerDelay = config.getPlayerRefreshDelay;
+
+    //TODO also trigger this on history state change
+    while(!getPlayer() && tries < config.getPlayerMaxTries){ //TODO if no video is found within checkForPlayerDelay * getPlayerMaxTries the script will stop
+        log("didnt find video element yet, sleeping", L_INFO);
+        tries++;
+        await sleep(checkForPlayerDelay);
+    }
+
+    if(myPlayer == null){
+        log("No video element was ever found.", L_ERROR);
+        throw new Error('No video element was ever found');
+    }
+
+    log("Got Videoplayer", L_SUCCESS);
     //re-get player in case of dynamic pages (e.g. netflix)
     //TODO observe this?
-    setInterval(function(){
-        myPlayer = $("video:first-of-type")[0];
-        //log("regot player");
-        showPbr();
+    setInterval(async function(){
+        if(getPlayer()){
+            //log("regot player");
+            await sleep(checkForPlayerDelay);
+            showPbr();
+        }
     }, 5000);
 
-    //setInterval(function(){log("test", L_SUCCESS);}, 300);
-
     try{showPbr();} catch (e){log("couldnt show pbr", L_ERROR);}
-    /*try{allPlayerClickPlayPause();} catch (e){log("couldnt clickpp", L_ERROR);}*/
     try{setVolume(1);} catch (e){log("couldnt setVolume", L_ERROR);}
     try{focusPlayer();} catch (e){log("couldnt focus player", L_ERROR);}
 }
@@ -245,7 +211,10 @@ Play or pause the player. Since the twitch player doesnt update ui when triggeri
 function pp(){
     if(config.site ==='twitch'){
         $(".qa-pause-play-button").click();
-    } else {
+    } else if(config.site ==='netflix'){
+        return;
+    }
+    else {
         if(myPlayer.paused){
             myPlayer.play();
         } else {
@@ -260,7 +229,9 @@ Insert the currentplaybackrate panel into the site
 */
 function showPbr(){
     if($(myPlayer).parent().find('#pbrPanel').length < 1){
+        log("adding pbrPanel to video", L_INFO);
         var txt = config.showDefaultPbr ? "1.00" : "";
+        getPlayer();
         $(myPlayer).parent().append(
             $('<div/>')
             .attr("id", "pbrPanel")
@@ -273,33 +244,6 @@ function showPbr(){
 
 var clickCount = 0;
 var singleClickTimer;
-/*
-Make the full player a play/pause button. Additionally check for doubleclicks to enter fullscreen.
-*/
-function allPlayerClickPlayPause(){
-    //twitch
-    var elems = [document.querySelectorAll('.player-overlay.player-fullscreen-overlay.js-control-fullscreen-overlay')[0], document.getElementById('js-paused-overlay')];
-    //youtube already has this feature
-    //couldnt find working panels on netflix
-
-    elems.forEach(function(elem) {
-        elem.addEventListener('click', function() {
-            clickCount++;
-            if (clickCount === 1) {
-                singleClickTimer = setTimeout(function() {
-                    log("single click");
-                    clickCount = 0;
-                    pp();
-                }, 300);
-            } else if (clickCount === 2) {
-                clearTimeout(singleClickTimer);
-                clickCount = 0;
-                log("double click");
-                fullscreen();
-            }
-        }, false);
-    });
-}
 
 /*
 Set the players volume to some value between 0 and 1
@@ -337,7 +281,7 @@ function focusPlayer(){
         myPlayer.parentElement.parentElement.focus(); //set focous to player so that as many shortcuts as possible are handled by original code
     } else if (config.site === 'netflix'){
         //do nothing
-    }else {
+    } else {
         myPlayer.focus();
     }
     log("gave player focus");
@@ -349,12 +293,14 @@ function fullscreen(){
         focusPlayer();
         log("going/exiting fullscreen");
         return;
+    } else {
+        myPlayer.requestFullscreen() //TODO wip
     }
     //netflix and youtube seem to have global hotkeys for this
 }
 
 /*
-Print console messages and shof notifications, if corresponding configs are set.
+Print console messages, if corresponding configs are set.
 Console messages will be prefixed with config.name
 @param {String} msg - the message to be printed
 @param {String} lvl - the log level
@@ -370,80 +316,19 @@ function log(msg, lvl=L_INFO){
             default: console.error(config.name+" [INVALID LOG LVL ("+lvl+")]:"+msg);
         }
     }
-    if(config.notifications){
-        //decideNotif(msg, lvl);
-        if(config.notiOptions.timeBetween > 0){
-            notifQ.push([msg, lvl]);
-        } else {
-            showNotif(msg, lvl);
-        }
-    }
-}
-
-/*
-Delay between notifications. can and will destroy order of notifications.
-*/
-function decideNotif(msg, lvl){
-    var now = new Date().getTime();
-    if(typeof lastNotif != 'undefined' && now-config.notiOptions.timeBetween < lastNotif){
-        console.log("delaying notif");
-        setTimeout(function(){decideNotif(msg,lvl);}, now-lastNotif);
-        return;
-    }
-    lastNotif = new Date().getTime();
-    showNotif(msg,lvl);
-}
-
-//TODO stop worker or make timeout longer when no notifications for some time
-/*
-Work away the notification queue with given delay between.
-*/
-function workNotifQ(){
-    /*log("working notif q");
-	setInterval(function(){
-		if(notifQ.length > 0){
-			var n = notifQ.shift();
-			if(typeof n != 'undefined'){
-				showNotif(n[0], n[1]);
-			}
-		}
-	}, config.notiOptions.timeBetween);*/
-}
-
-/*
-Show a Notification
-@param {String} msg - the notifications message
-@param {String} lvl - the type of notification
-*/
-function showNotif(msg, lvl){
-    /*
-	//onOpening makes sure notifications dissapear if the site is not focused, izitoast doesnt hide toasts in this case appearently (seems to only happen with progress bar enabled)
-		//  , onOpening: function(instance, toast){setTimeout(function(){$(toast).slideUp();}, config.notiOptions.timeout);}
-		//dont notify for log and info
-		var tst = {title: msg};
-		switch(lvl){
-			case L_INFO: break; //iziToast.info(tst); break;
-			case L_ERROR: iziToast.error(tst); break;
-			case L_SUCCESS: iziToast.success(tst); break;
-			case L_WARN: iziToast.warning(tst); break;
-			default: iziToast.info(tst); break;
-		}*/
 }
 
 (function() {
     setTimeout(function(){setUp();}, 1000); //wait for requires
 
-    Mousetrap.bind(config.hotkeys.netflixSkipIntro, function() {
-        //$(".skip-credits>a>span").click(); //doesnt work anymore - 2018
-        if(document.getElementsByClassName('skip-credits').length !== 0 && document.getElementsByClassName('skip-credits-hidden').length == 0){
-            document.getElementsByClassName('skip-credits')[0].firstElementChild.click();
-        }
-    });
-
     Mousetrap.bind(config.hotkeys.netflixNext, function() {
+        /*if(document.querySelector("[data-uia=next-episode-seamless-button]")){
+           document.querySelectorAll("[data-uia=next-episode-seamless-button]").click();
+        }
         if (document.getElementsByClassName('postplay-still-container').length !== 0) {
             document.getElementsByClassName('postplay-still-container')[0].click();
-        }
+        }*/
+        document.querySelector(".button-nfplayerNextEpisode").click()
         log("netflix next pressed", L_INFO);
     });
 
