@@ -5,14 +5,7 @@
 // @description  add hotkeys and other functionality to html5 video players
 // @author       Wolfram Soyka
 
-// @match        http*://*.twitch.tv/*
-// @match        http*://*.netflix.com/*
-// @match        http*://*.youtube.com/*
-// @match        http*://*.golem.de/*
-// @match 		 http*://*.ltcc.tuwien.ac.at/*
-// @match        http*://*.vimeo.com/*
-// @match        https://tvthek.orf.at/*
-// @match 		 http*://*
+// @match        http*://*/*
 
 // @require      https://cdnjs.cloudflare.com/ajax/libs/mousetrap/1.6.1/mousetrap.min.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js
