@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HTML5 Video Controls
 // @namespace    https://github.com/wsoyka/userscripts/raw/master/html5_video_controls.user.js
-// @version      0.38
+// @version      0.39
 // @description  add hotkeys and other functionality to html5 video players
 // @author       Wolfram Soyka
 
