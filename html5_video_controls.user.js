@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HTML5 Video Controls
 // @namespace    https://github.com/wsoyka/userscripts/raw/master/html5_video_controls.user.js
-// @version      0.39
+// @version      0.40
 // @description  add hotkeys and other functionality to html5 video players
 // @author       Wolfram Soyka
 
@@ -136,9 +136,10 @@ async function setUp(){
     var tries = 0;
     var checkForPlayerDelay = config.getPlayerRefreshDelay;
 
+    log("Starting search for Video Player", L_INFO);
     //TODO also trigger this on history state change
     while(!getPlayer() && tries < config.getPlayerMaxTries){ //TODO if no video is found within checkForPlayerDelay * getPlayerMaxTries the script will stop
-        log("didnt find video element yet, sleeping", L_INFO);
+        //log("didnt find video element yet, sleeping", L_INFO);
         tries++;
         await sleep(checkForPlayerDelay);
     }
