@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HTML5 Video Controls
 // @namespace    https://github.com/wsoyka/userscripts/raw/master/html5_video_controls.user.js
-// @version      0.40
+// @version      0.41
 // @description  add hotkeys and other functionality to html5 video players
 // @author       Wolfram Soyka
 
@@ -45,6 +45,8 @@ twitch player has a play button centered, increase click area to whole player? o
 
 'use strict';
 
+const L_ALWAYS = 6, L_ERROR = 5, L_WARN = 4, L_SUCCESS = 3, L_INFO = 2, L_DEBUG = 1;
+const LOGLVL = {6: "ALWAYS", 5: "ERROR", 4: "WARN", 3: "SUCCESS", 2: "INFO", 1: "DEBUG"};
 /*
 site: set by script, used to decide what preconfig to use for known sites
 volumeControl: enable shortcuts for volume control
@@ -74,8 +76,10 @@ var config = {
         fullscreen: ["f"],
         mute: ["m"],
         playpause: ["space"],
-        netflixNext: ["n"], //TODO wip, probably only works during episode, not at end
+        netflixNext: ["n"],
     },
+    playbackRateChange: 0.25,
+    playbackRateSlowChange: 0.125,
     getPlayerInitialDelay: 2000,
     getPlayerRefreshDelay: 300,
     getPlayerMaxTries: 3000,
@@ -84,16 +88,17 @@ var config = {
     maxSpeed: 16,
     minSpeed: 0,
     showDefaultPbr: true,
-    debug:true,
+    log:true,
+    logLevel: L_ERROR, //minimum log level that gets printed
     name: 'HTML5 Player Controls'
 };
 
 var myPlayer = null, pbrPanel;
-const L_ERROR = 1; const L_WARN = 2; const L_SUCCESS = 3; const L_INFO = 4; const L_DEBUG = 5;
+var currentPbr = 1, currentVol = 1;
 
 /* try to get videoplayers */
 function getPlayer(){
-    //TODO instead, check event onplaying for all video elements of a site, focus the playing one.
+    //TODO IDEA instead, check event onplaying for all video elements of a site, focus the playing one.
     var selector = "";
     if(config.site==='tvthek'){
         selector = ".video_wrapper video";
@@ -102,13 +107,12 @@ function getPlayer(){
     }
     myPlayer = $(selector); //leave as jquery obj for now
     if (myPlayer.length > 0){ //check if a player has already been added to DOM
-        if (myPlayer[0].readyState === 4) { //check if its ready (in plain js)
-            myPlayer = myPlayer[0]; //make vanilla obj
-            return true;
-        }
+        myPlayer = myPlayer[0]; //make vanilla obj
+        return true;
+    } else {
+        myPlayer = null;
+        return false;
     }
-    myPlayer = null;
-    return false;
 }
 
 /* sleep via promise */
@@ -131,18 +135,9 @@ async function setUp(){
     }
     log("Site matched: " + config.site);
 
-    await sleep(config.getPlayerInitialDelay);
+    log("Starting search for Video Player");
 
-    var tries = 0;
-    var checkForPlayerDelay = config.getPlayerRefreshDelay;
-
-    log("Starting search for Video Player", L_INFO);
-    //TODO also trigger this on history state change
-    while(!getPlayer() && tries < config.getPlayerMaxTries){ //TODO if no video is found within checkForPlayerDelay * getPlayerMaxTries the script will stop
-        //log("didnt find video element yet, sleeping", L_INFO);
-        tries++;
-        await sleep(checkForPlayerDelay);
-    }
+    getPlayer();
 
     if(myPlayer == null){
         log("No video element was ever found.", L_ERROR);
@@ -150,15 +145,9 @@ async function setUp(){
     }
 
     log("Got Videoplayer", L_SUCCESS);
-    //re-get player in case of dynamic pages (e.g. netflix)
-    //TODO observe this?
-    setInterval(async function(){
-        if(getPlayer()){
-            //log("regot player");
-            await sleep(checkForPlayerDelay);
-            showPbr();
-        }
-    }, 5000);
+    //re-get player in case of dynamic pages (e.g. netflix) on video element mutation
+    //TODO untested
+    observePlayer(myPlayer);
 
     try{showPbr();} catch (e){log("couldnt show pbr", L_ERROR);}
     try{setVolume(1);} catch (e){log("couldnt setVolume", L_ERROR);}
@@ -181,6 +170,7 @@ function changePbr(by){
         } else if (newPbr<0){
             newPbr=0;
         }
+        currentPbr = newPbr;
         myPlayer.playbackRate=newPbr;
         pbrPanel.html(formatPbr(myPlayer.playbackRate));
         log("PlaybackRate changed, new rate: "+myPlayer.playbackRate);
@@ -223,7 +213,7 @@ Insert the currentplaybackrate panel into the site
 */
 function showPbr(){
     if($(myPlayer).parent().find('#pbrPanel').length < 1){
-        log("adding pbrPanel to video", L_INFO);
+        log("adding pbrPanel to video");
         var txt = config.showDefaultPbr ? "1.00" : "";
         getPlayer();
         $(myPlayer).parent().append(
@@ -235,9 +225,6 @@ function showPbr(){
     }
     pbrPanel = $('#pbrPanel');
 }
-
-var clickCount = 0;
-var singleClickTimer;
 
 /*
 Set the players volume to some value between 0 and 1
@@ -259,6 +246,7 @@ function setVolume(to){
             return;
         }
         myPlayer.volume = to;
+        currentVol = to;
         log("new volume: " + myPlayer.volume);
     } catch (ex) {
         log(ex.message, L_ERROR);
@@ -300,33 +288,27 @@ Console messages will be prefixed with config.name
 @param {String} lvl - the log level
 */
 function log(msg, lvl=L_INFO){
-    if(config.debug){
-        var cmsg=config.name+": "+msg;
+    var cmsg=config.name+" ["+LOGLVL[lvl]+"]: "+msg;
+    if(lvl==L_ALWAYS){
+        console.log(cmsg);
+    } else if(config.log && lvl>=config.logLevel){
         switch(lvl){
-            case L_ERROR: console.error(cmsg); break;
+            case L_DEBUG: console.log(cmsg); break;
             case L_INFO: console.info(cmsg); break;
             case L_SUCCESS: console.log(cmsg); break;
+            case L_SUCCESS: console.log(cmsg); break;
             case L_WARN: console.warn(cmsg); break;
+            case L_ERROR: console.error(cmsg); break;
             default: console.error(config.name+" [INVALID LOG LVL ("+lvl+")]:"+msg);
         }
     }
 }
 
-(function() {
-    setTimeout(function(){setUp();}, 1000); //wait for requires
-
+function setHotkeys(){
     Mousetrap.bind(config.hotkeys.netflixNext, function() {
-        /*if(document.querySelector("[data-uia=next-episode-seamless-button]")){
-           document.querySelectorAll("[data-uia=next-episode-seamless-button]").click();
-        }
-        if (document.getElementsByClassName('postplay-still-container').length !== 0) {
-            document.getElementsByClassName('postplay-still-container')[0].click();
-        }*/
         document.querySelector(".button-nfplayerNextEpisode").click()
-        log("netflix next pressed", L_INFO);
+        log("netflix next pressed");
     });
-
-
 
     Mousetrap.bind(config.hotkeys.fullscreen, function() {
         fullscreen();
@@ -341,16 +323,16 @@ function log(msg, lvl=L_INFO){
     });
 
     /* Playbackrate Up */
-    Mousetrap.bind(config.hotkeys.playbackRateUp, function(){changePbr(0.25); return false;});
+    Mousetrap.bind(config.hotkeys.playbackRateUp, function(){changePbr(config.playbackRateChange); return false;});
 
     /* Playbackrate Down */
-    Mousetrap.bind(config.hotkeys.playbackRateDown, function(){changePbr(-0.25); return false;});
+    Mousetrap.bind(config.hotkeys.playbackRateDown, function(){changePbr(-config.playbackRateChange); return false;});
 
     /* Playbackrate Up slow, shift + */
-    Mousetrap.bind(config.hotkeys.playbackRateSlowUp, function(){changePbr(0.1); return false;});
+    Mousetrap.bind(config.hotkeys.playbackRateSlowUp, function(){changePbr(config.playbackRateSlowChange); return false;});
 
     /* Playbackrate Up slow, shift - */
-    Mousetrap.bind(config.hotkeys.playbackRateSlowDown, function(){changePbr(-0.1); return false;});
+    Mousetrap.bind(config.hotkeys.playbackRateSlowDown, function(){changePbr(-config.playbackRateSlowChange); return false;});
 
 
     /* Mute */
@@ -405,7 +387,65 @@ function log(msg, lvl=L_INFO){
         setVolume(to);
         log("volume down");
     });
-})();
+}
+
+/**
+ * Initial wait for video Element
+ */
+function waitForVideo(){
+    let observer = new MutationObserver(function(mutations) {
+        console.log("wait for video triggered ");
+        console.log(mutations);
+        let videoElements = document.getElementsByTagName('video');
+        if (videoElements.length>0){
+            log("found video", L_ALWAYS);
+            setUp();
+            observer.disconnect();
+            return true;
+        }
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+}
+
+/*
+ * Observe player element mutation
+ * @param player - the element to watch
+ */
+function observePlayer(player){
+    let observer = new MutationObserver(function(mutations) {
+        console.log("observePlayer triggered:");
+        console.log(mutations);
+        let videoElements = player.parentNode.getElementsByTagName('video');
+        if (videoElements.length>0){
+            if(videoElements.length > 1){
+                console.log("found multiple video elements in old players parentNode, see:");
+                console.log(videoElements);
+            }
+            myPlayer = videoElements[0];
+            myPlayer.playbackRate = currentPbr;
+            myPlayer.volume = currentVol;
+        }
+    });
+
+    observer.observe(player.parentNode, {
+        childList: true,
+    });
+}
+
+$(function(){
+    log("starting", L_ALWAYS);
+    if(waitForVideo()){
+        setUp();
+    }
+    //on dynamic pagechange:
+    window.onpopstate = function(){if(waitForVideo()){setUp();}};
+
+    setHotkeys();
+});
 
 //--- Style our newly added elements using CSS.
 GM_addStyle(multilineCssStr(function () {/*!
@@ -419,9 +459,7 @@ GM_addStyle(multilineCssStr(function () {/*!
         display: inline;
         width: 35px;
         height: 24px;
-        //color: rgba(134, 132, 132, 0.77)!important;
         color: #80ff02;
-        //"color: rgba(255,0, 0, 1)!important;
         user-select: none;
     }
     #js-paused-overlay {
@@ -438,8 +476,8 @@ Make GM_addStyle less of a pain with this awesome function (stackoverflow.com/q/
 */
 function multilineCssStr(dummyFunc) {
     var str = dummyFunc.toString();
-    str     = str.replace (/^[^\/]+\/\*!?/, '') // Strip function () { /*!
-        .replace (/\s*\*\/\s*\}\s*$/, '')   // Strip */ }
+    str = str.replace (/^[^\/]+\/\*!?/, '') // Strip function () { /*!
+        .replace (/\s*\*\/\s*\}\s*$/, '') // Strip */ }
         .replace (/\/\/.+$/gm, ''); // Double-slash comments wreck CSS. Strip them.
     return str;
 }
