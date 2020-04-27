@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HTML5 Video Controls
 // @namespace    https://github.com/wsoyka/userscripts/raw/master/html5_video_controls.user.js
-// @version      0.41
+// @version      0.42
 // @description  add hotkeys and other functionality to html5 video players
 // @author       Wolfram Soyka
 
@@ -391,6 +391,7 @@ function setHotkeys(){
 
 /**
  * Initial wait for video Element
+ * https://stackoverflow.com/a/39332340
  */
 function waitForVideo(){
     let observer = new MutationObserver(function(mutations) {
@@ -413,6 +414,7 @@ function waitForVideo(){
 
 /*
  * Observe player element mutation
+ * https://stackoverflow.com/a/39332340
  * @param player - the element to watch
  */
 function observePlayer(player){
