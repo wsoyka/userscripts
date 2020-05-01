@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HTML5 Video Controls
 // @namespace    https://github.com/wsoyka/userscripts/raw/master/html5_video_controls.user.js
-// @version      0.42
+// @version      0.43
 // @description  add hotkeys and other functionality to html5 video players
 // @author       Wolfram Soyka
 
@@ -22,26 +22,22 @@
  |  __  |  | |  | |\/| | |    |___ \    \ \/ / | |/ _` |/ _ \/ _ \| |    / _ \| '_ \| __| '__/ _ \| / __|
  | |  | |  | |  | |  | | |____ ___) |    \  /  | | (_| |  __/ (_) | |___| (_) | | | | |_| | | (_) | \__ \
  |_|  |_|  |_|  |_|  |_|______|____/      \/   |_|\__,_|\___|\___/ \_____\___/|_| |_|\__|_|  \___/|_|___/
-This is a hobby project. This project is under development and any part might and probably will change in future versions.
-I am developing this for personal use and to hone some programming skills. This script is developed for Tampermonkey and Google Chrome.
+ 
+This is a hobby project. This script is developed for Tampermonkey and Google Chrome.
 I cannot guarantee functionality for you, but I invite you to try it out, and experiment around with it.
-Main focus of this script is to be able to play as many HTML5Videos with higher playback rates as possible.
-Other functionality is purely for convenience.
-Works by getting first HTML5 Video Player on page and  modifiying fields of its instance. Any Sites you want to add feel free to add to
-the @match section above, as long as a player can be found basic functionality should work. Warning: Some UIs are written in a way that
-ignore the players attributes after initialization, meaning the the UI will not be updated, but the options will still change. E.g. muting
-the player will work, but the volume slider will be left where it was before the mute.
+
+Main focus of this script is to be able to play HTML5Videos with higher playback rates. Other functionality is purely for convenience.
+
+Works by getting first HTML5 Video Player on page and  modifiying fields of its instance. 
+Some sites have specific setups, but as long as a player can be found basic functionality should work. 
+Warning: Some UIs are written in a way that ignore the players attributes after initialization, meaning the the UI
+will not be updated, but the options will still change (e.g. muting the player will work, but the volume slider will 
+be left where it was before the mute).
 */
 
 //JSHint Config
 /*globals $:false, console:false, Mousetrap:false, GM_addStyle:false */
 
-/* TODO
-add quality up/down options shortcuts cmd up/down, windows?? --> cant find quality options for twitch
-netflix enable subtitles (iterate through) --> netflix controls seem to be in the shadow dom, no access
-netflix switch audio language (iterate)
-twitch player has a play button centered, increase click area to whole player? otherwise the button cancels out the fullscreenpp
-*/
 
 'use strict';
 
@@ -64,7 +60,7 @@ shortctus for controls:
 */
 var config = {
     site:'undef',
-    hotkeys: {
+    hotkeys: { //for help, see https://craig.is/killing/mice#keys
         volumeUp: ["up"],
         volumeDown: ["down"],
         volumeSlowUp: ["shift+up"],
@@ -98,7 +94,7 @@ var currentPbr = 1, currentVol = 1;
 
 /* try to get videoplayers */
 function getPlayer(){
-    //TODO IDEA instead, check event onplaying for all video elements of a site, focus the playing one.
+    //TODO IDEA instead, check event onplaying for all video elements of a site, control the playing one.
     var selector = "";
     if(config.site==='tvthek'){
         selector = ".video_wrapper video";
@@ -276,7 +272,7 @@ function fullscreen(){
         log("going/exiting fullscreen");
         return;
     } else {
-        myPlayer.requestFullscreen() //TODO wip
+        myPlayer.requestFullscreen();
     }
     //netflix and youtube seem to have global hotkeys for this
 }
@@ -395,8 +391,8 @@ function setHotkeys(){
  */
 function waitForVideo(){
     let observer = new MutationObserver(function(mutations) {
-        console.log("wait for video triggered ");
-        console.log(mutations);
+        //console.log("wait for video triggered ");
+        //console.log(mutations);
         let videoElements = document.getElementsByTagName('video');
         if (videoElements.length>0){
             log("found video", L_ALWAYS);
@@ -419,8 +415,8 @@ function waitForVideo(){
  */
 function observePlayer(player){
     let observer = new MutationObserver(function(mutations) {
-        console.log("observePlayer triggered:");
-        console.log(mutations);
+        //console.log("observePlayer triggered:");
+        //console.log(mutations);
         let videoElements = player.parentNode.getElementsByTagName('video');
         if (videoElements.length>0){
             if(videoElements.length > 1){
@@ -439,7 +435,7 @@ function observePlayer(player){
 }
 
 $(function(){
-    log("starting", L_ALWAYS);
+    log("starting up", L_ALWAYS);
     if(waitForVideo()){
         setUp();
     }
