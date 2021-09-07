@@ -147,7 +147,9 @@ async function setUp(){
 
     try{showPbr();} catch (e){log("couldnt show pbr", L_ERROR);}
     try{setVolume(1);} catch (e){log("couldnt setVolume", L_ERROR);}
-    try{focusPlayer();} catch (e){log("couldnt focus player", L_ERROR);}
+    if(config.forceFocus){
+        try{focusPlayer();} catch (e){log("couldnt focus player", L_ERROR);}
+    }
 }
 
 /*
