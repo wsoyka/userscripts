@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HTML5 Video Controls
 // @namespace    @@https://github.com/wsoyka/userscripts/raw/master/html5_video_controls.user.js
-// @version      1.02
+// @version      1.03
 // @description  add hotkeys and other functionality to html5 video players
 // @author       Wolfram Soyka
 
@@ -254,6 +254,14 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
         }
     }
 
+    function isInViewport(element, pctInViewport=40) {
+        const bRect = element.getBoundingClientRect();     
+        const intersectionHeight = Math.min(bRect.bottom, window.innerHeight) - Math.max(bRect.top, 0);
+        const percentageInView = (intersectionHeight / element.clientHeight) * 100;
+      
+        return percentageInView >= pctInViewport;
+      }
+
     /*
     Focus the player
     */
@@ -262,9 +270,11 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
             return; 
         }
         const hasFocusedInput = document.activeElement && document.activeElement.tagName.toLowerCase() === 'input';
+        const videoPlaying =   videoEl.currentTime > 0 && !videoEl.paused && !videoEl.ended;
 
-        if(hasFocusedInput){
-            log("wont focus player, because an <input> element is currently focused", L_INFO)
+
+        if(hasFocusedInput || !videoPlaying || !isInViewport(videoEl, 80)){
+            log("wont focus player, because an <input> element is currently focused, video isnt playing or in viewport", L_DEBUG)
             return;
         }
 
