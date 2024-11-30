@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HTML5 Video Controls
 // @namespace    @@https://github.com/wsoyka/userscripts/raw/master/html5_video_controls.user.js
-// @version      1.03
+// @version      1.04
 // @description  add hotkeys and other functionality to html5 video players
 // @author       Wolfram Soyka
 
@@ -197,16 +197,24 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
             selector = ".video_wrapper video";
         }
 
-        videoEl = document.querySelectorAll(selector); //leave as jquery obj for now
-        if (videoEl.length > 0){
-            videoEl = videoEl[0]; //take first player
-            log("Got Videoplayer", L_DEBUG);
-            return true;
-        } else {
+        allVideoEl = document.querySelectorAll(selector); //leave as jquery obj for now
+        if(allVideoEl.lenght === 0){
             videoEl = null;
             log("No video element was found.", L_DEBUG);
             //throw new Error('No video element was ever found');
             return false;
+        }
+
+        if (allVideoEl.length > 1){
+            for(vidEl in allVideoEl){
+                if(isVideoPlaying(vidEl)){
+                    videoEl = vidEl;
+                }
+            }
+            log("Got Videoplayer", L_DEBUG);
+            return true;
+        } else {
+           videoEl = allVideoEl[0]; //take first player
         }
     }
 
@@ -254,6 +262,10 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
         }
     }
 
+    function isVideoPlaying(videoNode){
+        videoNode.currentTime > 0 && !videoNode.paused && !videoNode.ended; //&&.readyState > 2
+    }    
+
     function isInViewport(element, pctInViewport=40) {
         const bRect = element.getBoundingClientRect();     
         const intersectionHeight = Math.min(bRect.bottom, window.innerHeight) - Math.max(bRect.top, 0);
@@ -270,10 +282,10 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
             return; 
         }
         const hasFocusedInput = document.activeElement && document.activeElement.tagName.toLowerCase() === 'input';
-        const videoPlaying =   videoEl.currentTime > 0 && !videoEl.paused && !videoEl.ended;
+        
 
 
-        if(hasFocusedInput || !videoPlaying || !isInViewport(videoEl, 80)){
+        if(hasFocusedInput || !isVideoPlaying(videoEl) || !isInViewport(videoEl, 80)){
             log("wont focus player, because an <input> element is currently focused, video isnt playing or in viewport", L_DEBUG)
             return;
         }
@@ -369,7 +381,7 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
     @param {String} lvl - the log level
     */
     function log(msg, lvl = L_INFO) {
-        const cmsg = `[${new Date().toISOString()}] ${config.scriptName} [${LOGLVLLABELS[lvl]}]: ${msg}`;
+        const cmsg = `[${config.scriptName} [${LOGLVLLABELS[lvl]}]: ${msg}`;
         if(config.logLevel === L_NOTHING){
             return;
         } else if ((lvl >= config.logLevel)) {
