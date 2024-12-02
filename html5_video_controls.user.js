@@ -197,25 +197,24 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
             selector = ".video_wrapper video";
         }
 
-        allVideoEl = document.querySelectorAll(selector); //leave as jquery obj for now
+        let allVideoEl = document.querySelectorAll(selector); //leave as jquery obj for now
         if(allVideoEl.lenght === 0){
-            videoEl = null;
             log("No video element was found.", L_DEBUG);
-            //throw new Error('No video element was ever found');
+            videoEl = null;
             return false;
         }
 
         if (allVideoEl.length > 1){
-            for(vidEl in allVideoEl){
-                if(isVideoPlaying(vidEl)){
-                    videoEl = vidEl;
+            for(let el in allVideoEl){
+                if(isVideoPlaying(el)){
+	            log("Got Videoplayer", L_DEBUG);
+                    videoEl = el;
+        	    return true;
                 }
             }
-            log("Got Videoplayer", L_DEBUG);
-            return true;
-        } else {
-           videoEl = allVideoEl[0]; //take first player
         }
+        videoEl = allVideoEl[0]; //take first player
+        return true
     }
 
     /*
