@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HTML5 Video Controls
 // @namespace    @@https://github.com/wsoyka/userscripts/raw/master/html5_video_controls.user.js
-// @version      1.06
+// @version      1.07
 // @description  add hotkeys and other functionality to html5 video players
 // @author       wsoyka
 
@@ -61,7 +61,7 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
     const ID_PBR_PANEL = '#pbrPanel';
 
     let config = {
-        hotkeys: { //for help, see https://craig.is/killing/mice#keys
+        hotkeys: { //see https://craig.is/killing/mice#keys
             pbrUp: ["plus", "ä", "s"],
             pbrDown: ["-", "ö", "a"],
             pbrUpSlow: ["*", "Ä"],
@@ -71,21 +71,21 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
             netflixNext: ["n"],
         },
         showDefaultpbr: true, //wether to show the default playback rate of 1.00
-        pbrChange: 0.25, //standard pbr step
-        pbrSlowChange: 0.125, //small pbr step
+        pbrStep: 0.25, //standard pbr step
+        pbrStepSmall: 0.125, //small pbr step
         checkForDynamicPageChangeMs: 3000, //how often to check if the page has changed dynamically. 0 to disable
         runOnPopstate: true, //whether to re-run on popstate.
         getPlayerInitialDelay: 3000, //~time to wait for video element to have been added to the page
         getPlayerRefreshDelay: 5000, //interval to re-run setup if it failed
         maxSetupAttempts: 30, //max attempts to setup
         focusPlayerInterval: 10000, //interval the player is given focus in ms. (many players have shortcuts implemented if focused.) 0 to disable
-        pbrMaximum: 16, //max pbr, most browsers seem to hardcap at 16
-        pbrMinimum: 0.25, //min pbr, values below 0 are ignored by players
-        logLevel: L_DEBUG, //minimum log level that gets printed. L_NOTHING to print no logs
-        scriptName: 'HTML5 Player Controls', //name of script, used as console logging prefix
-        site:'undef' //do not change set by script, used to decide what preconfig to use for known sites
+        pbrMaximum: 10, //max pbr, most browsers limit this to 16
+        pbrMinimum: 0.125, //min pbr, values below 0 are ignored by players
+        logLevel: L_WARN, //minimum log level that gets printed. L_NOTHING to print no logs
+        scriptName: 'HTML5 Player Controls', //name of script, console logging prefix
     };
 
+    let currSite = 'undef';
     let videoEl, pbrPanel;
     let pbrRestore;
     let DOMObserver, myHrefObserver, videoObserver;
@@ -121,8 +121,6 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
     }), config.getPlayerInitialDelay);
 
 
-    //observer_windowLocationObserver(); //runs too often
-
     function _restorepbr() {
         if(videoEl.playbackRate == 1){
             log(`HTML5VideoControlsPlayerSetup() Restoring previous values.. pbr:${pbrRestore}`);
@@ -151,10 +149,10 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
     function HTML5VideoControlsPlayerSetup(src="unknown"){
         const matches = /(twitch.tv|youtube|netflix|tvthek.orf)/.exec(window.location.hostname);
         if (matches) {
-            config.site = matches[1];
+            currSite = matches[1];
         }
 
-        log("HTML5VideoControlsPlayerSetup() running. site: "+config.site+" source: "+src, L_ALWAYS);
+        log("HTML5VideoControlsPlayerSetup() running. site: "+currSite+" source: "+src, L_ALWAYS);
         //todo
         //todo try catch instead?
         //todo
@@ -189,17 +187,15 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
     function sortNodesBySizeAndPosition(nodes) {
         nodes = Array.from(nodes);
         return nodes.sort((a, b) => {
-            // Calculate area for both nodes
             const areaA = a.getBoundingClientRect().width * a.getBoundingClientRect().height;
             const areaB = b.getBoundingClientRect().width * b.getBoundingClientRect().height;
 
-            // Compare areas in descending order
-            if (areaA !== areaB) {
-                return areaB - areaA;
+            if (areaA === areaB) {
+                return a.getBoundingClientRect().top - b.getBoundingClientRect().top;
             }
 
-            // If areas are equal, compare top position in descending order
-            return a.getBoundingClientRect().top - b.getBoundingClientRect().top;
+
+            return areaB - areaA;
         });
     }
 
@@ -207,9 +203,9 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
         log("Starting search for DOM Video Player", L_WARN);
         //TODO IDEA instead, check event onplaying for all video elements of a site, control the playing one.
         let selector = "video";//:first-of-type";
-        if(config.site==='tvthek.orf'){
+        if(currSite==='tvthek.orf'){
             selector = ".video_wrapper video";
-        } else if (config.site==='youtube'){
+        } else if (currSite==='youtube'){
             selector = "#content video";
         }
 
@@ -338,7 +334,7 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
     Focus the player
     */
     function focusPlayer(){
-        if (config.site === 'netflix'){ //netflix player is always focused
+        if (currSite === 'netflix'){ //netflix player is always focused
             return;
         }
 
@@ -347,7 +343,7 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
             return;
         }
 
-        if(config.site === "twitch.tv" || config.site === 'youtube'){
+        if(currSite === "twitch.tv" || currSite === 'youtube'){
             videoEl.parentElement.parentElement.focus();
         } else {
             videoEl.focus();
@@ -371,7 +367,7 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
         });
 
         Mousetrap.bind(config.hotkeys.playpause, function() {
-            if(videoEl.parentNode.parentNode.contains(document.activeElement) || config.site==='netflix'){ // player focused or site that works as it should
+            if(videoEl.parentNode.parentNode.contains(document.activeElement) || currSite==='netflix'){ // player focused or site that works as it should
                 //youtube added this functionality at some point in 2023
                 log("didnt play/pause, normal shortcut should work", L_DEBUG);
                 return;
@@ -386,10 +382,10 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
             log("play/pause triggered");
         });
 
-        Mousetrap.bind(config.hotkeys.pbrUp, function(){changepbrBy(config.pbrChange); return false;});
-        Mousetrap.bind(config.hotkeys.pbrDown, function(){changepbrBy(-config.pbrChange); return false;});
-        Mousetrap.bind(config.hotkeys.pbrUpSlow, function(){changepbrBy(config.pbrSlowChange); return false;});
-        Mousetrap.bind(config.hotkeys.pbrDownSlow, function(){changepbrBy(-config.pbrSlowChange); return false;});
+        Mousetrap.bind(config.hotkeys.pbrUp, function(){changepbrBy(config.pbrStep); return false;});
+        Mousetrap.bind(config.hotkeys.pbrDown, function(){changepbrBy(-config.pbrStep); return false;});
+        Mousetrap.bind(config.hotkeys.pbrUpSlow, function(){changepbrBy(config.pbrStepSmall); return false;});
+        Mousetrap.bind(config.hotkeys.pbrDownSlow, function(){changepbrBy(-config.pbrStepSmall); return false;});
     }
 
 
