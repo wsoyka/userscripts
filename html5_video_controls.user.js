@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         HTML5 Video Controls
 // @namespace    @@https://github.com/wsoyka/userscripts/raw/master/html5_video_controls.user.js
-// @version      1.05
+// @version      1.06
 // @description  add hotkeys and other functionality to html5 video players
-// @author       Wolfram Soyka
+// @author       wsoyka
 
 // @match        http*://www.youtube.com/*
 // @match        http*://www.netflix.com/*
@@ -41,7 +41,7 @@ This script is developed for chromium based browsers using Tampermonkey.
 
 Main focus is to be able to play HTML5Videos with higher playback rates.
 
-Operates by modifying attributes of the first HTML5 Video Player ("video" element) on a page.
+Operates by modifying attributes of a HTML5 Video Player ("video" element) on a page.
 Some sites have specific setups, but as long as a player can be found basic functionality should work.
 Some UIs ignore the players attributes after initialization, meaning the UI will not be updated (e.g. on pause).
 */
@@ -58,35 +58,36 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
 (function() {
     const L_NOTHING = 99, L_ALWAYS = 10, L_ERROR = 5, L_WARN = 4, L_SUCCESS = 3, L_INFO = 2, L_DEBUG = 1;
     const LOGLVLLABELS = {10: "ALWAYS", 5: "ERROR", 4: "WARN", 3: "SUCCESS", 2: "INFO", 1: "DEBUG"};
+    const ID_PBR_PANEL = '#pbrPanel';
 
     let config = {
         hotkeys: { //for help, see https://craig.is/killing/mice#keys
-            playbackRateUp: ["plus", "ä"],
-            playbackRateDown: ["-", "ö"],
-            playbackRateUpSlow: ["*", "Ä"],
-            playbackRateDownSlow: ["_", "Ö"],
+            pbrUp: ["plus", "ä", "s"],
+            pbrDown: ["-", "ö", "a"],
+            pbrUpSlow: ["*", "Ä"],
+            pbrDownSlow: ["_", "Ö"],
             fullscreen: ["f"],
             playpause: ["space"],
             netflixNext: ["n"],
         },
-        showDefaultPlaybackRate: true, //wether to show the default playback rate of 1.00
-        playbackRateChange: 0.25, //standard playbackRate step
-        playbackRateSlowChange: 0.125, //slow playbackRate step
-        checkForDynamicPageChangeMs: 7000, //how often to check if the page has changed dynamically. 0 to disable
+        showDefaultpbr: true, //wether to show the default playback rate of 1.00
+        pbrChange: 0.25, //standard pbr step
+        pbrSlowChange: 0.125, //small pbr step
+        checkForDynamicPageChangeMs: 3000, //how often to check if the page has changed dynamically. 0 to disable
         runOnPopstate: true, //whether to re-run on popstate.
-        getPlayerInitialDelay: 2000, //~time to wait for video element to have been added to the page
+        getPlayerInitialDelay: 3000, //~time to wait for video element to have been added to the page
         getPlayerRefreshDelay: 5000, //interval to re-run setup if it failed
         maxSetupAttempts: 30, //max attempts to setup
         focusPlayerInterval: 10000, //interval the player is given focus in ms. (many players have shortcuts implemented if focused.) 0 to disable
-        playbackRateMaximum: 16, //max playbackRate, most browsers seem to hardcap at 16
-        playbackRateMinimum: 0, //min playbackRate, values below 0 are ignored by players
+        pbrMaximum: 16, //max pbr, most browsers seem to hardcap at 16
+        pbrMinimum: 0.25, //min pbr, values below 0 are ignored by players
         logLevel: L_DEBUG, //minimum log level that gets printed. L_NOTHING to print no logs
         scriptName: 'HTML5 Player Controls', //name of script, used as console logging prefix
         site:'undef' //do not change set by script, used to decide what preconfig to use for known sites
     };
 
-    let videoEl, playbackRatePanel;
-    let playbackRateRestore;
+    let videoEl, pbrPanel;
+    let pbrRestore;
     let DOMObserver, myHrefObserver, videoObserver;
     let lastKnownHrefWithoutHash = locationHrefWithoutHash(window.location), setupAttempts = 0;
 
@@ -100,8 +101,51 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
     if(config.checkForDynamicPageChangeMs>0){
         setInterval(periodical_hrefComparison, config.checkForDynamicPageChangeMs);
     }
+
+    document.addEventListener("yt-navigate-finish", () => setTimeout(() => {
+        HTML5VideoControlsPlayerSetup("yt-navigate-finish");
+    }), config.getPlayerInitialDelay);
+
+    document.addEventListener("yt-page-data-updated", () => setTimeout(() => {
+        console.log("event yt-page-data-updated")
+        const allVideoEl = selectVideoNodes();
+        if (!allVideoEl){
+            console.log("|- none found");
+        } else if (choosePlayingVideo(allVideoEl)){
+            console.log("|- playing video:");
+            console.log(choosePlayingVideo(allVideoEl));
+        } else {
+            console.log("|- by size and pos:");
+            console.log(sortNodesBySizeAndPosition(allVideoEl)[0]);
+        }
+    }), config.getPlayerInitialDelay);
+
+
     //observer_windowLocationObserver(); //runs too often
 
+    function _restorepbr() {
+        if(videoEl.playbackRate == 1){
+            log(`HTML5VideoControlsPlayerSetup() Restoring previous values.. pbr:${pbrRestore}`);
+            let tmp = pbrRestore;
+            pbrRestore = null;
+            changepbrBy(tmp - 1);
+        }
+    }
+
+    function maybeRestorepbr(){
+        if(pbrRestore) {
+            log(`pbr restore: ${pbrRestore} v pbr: ${videoEl.playbackRate}`);
+            if (isVideoPlaying(videoEl)){
+                _restorepbr();
+            } else {
+                videoEl.onplay = (event) => { //todo does this even do anything
+                    _restorepbr();
+                    videoEl.onplay = null;
+                }
+            }
+        }
+
+    }
 
 
     function HTML5VideoControlsPlayerSetup(src="unknown"){
@@ -109,183 +153,197 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
         if (matches) {
             config.site = matches[1];
         }
-        
-        log("HTML5VideoControlsPlayerSetup() running. site: "+config.site+" source: "+src, L_ALWAYS);
-        
-        if(getDOMVideoNode()){
-            try{DOMAppendPlaybackRatePanel();} catch (e){log("error injecting playbackRatePanel "+e.message, L_ERROR);}
 
-            if(playbackRateRestore){
-                log(`HTML5VideoControlsPlayerSetup() Restoring previous values.. PlaybackRate:${playbackRateRestore}`);
-                changePlaybackRateBy(playbackRateRestore - 1);
-            }
-            
-            if(config.focusPlayerInterval > 0){
-                setInterval(focusPlayer, config.focusPlayerInterval);
-            }
-            log("HTML5VideoControlsPlayerSetup() done", L_DEBUG);
-        } else {        
+        log("HTML5VideoControlsPlayerSetup() running. site: "+config.site+" source: "+src, L_ALWAYS);
+        //todo
+        //todo try catch instead?
+        //todo
+        if(!getDOMVideoNode()){
             log("HTML5VideoControlsPlayerSetup() done without finding a video player. will rerun");
             if(setupAttempts++<config.maxSetupAttempts){
                 setTimeout(() => HTML5VideoControlsPlayerSetup("attempt "+setupAttempts), setupAttempts*config.getPlayerRefreshDelay)
             }
         }
+        DOMAppendpbrPanel();
+
+        maybeRestorepbr();
+
+        if(config.focusPlayerInterval > 0){
+            setInterval(focusPlayer, config.focusPlayerInterval);
+        }
+        log("re-binding hotkeys", L_DEBUG);
+        bindHotkeys();
+        log("HTML5VideoControlsPlayerSetup() done", L_DEBUG);
     }
-    
+
+
     function periodical_hrefComparison(){
         let newHref = locationHrefWithoutHash(window.location);
-        if ( newHref !== lastKnownHrefWithoutHash) {
+        if (newHref !== lastKnownHrefWithoutHash) {
+            log(`new href discovered: ${lastKnownHrefWithoutHash}`);
             lastKnownHrefWithoutHash = newHref;
-            //can trigger before elements ready
-            setTimeout(() => HTML5VideoControlsPlayerSetup("periodical_hrefComparison"), config.getPlayerInitialDelay);
+            setTimeout(() => HTML5VideoControlsPlayerSetup("periodical_hrefComparison"), config.getPlayerInitialDelay); //can trigger before elements ready
         }
     }
 
-    //probably not worth the effort?
-    function observer_windowLocationObserver(){
-        if (myHrefObserver) { //cancel previous observer
-            log("[hrefObserver] disconnecting", L_DEBUG);
-            myHrefObserver.disconnect();
-        }
-        myHrefObserver = new MutationObserver(function(mutations) {
-            if (locationHrefWithoutHash(window.location) !== lastKnownHrefWithoutHash) {
-                log(`[hrefObserver] URL changed from ${lastKnownHrefWithoutHash} to ${window.location.href}`, L_DEBUG);
-                lastKnownHrefWithoutHash = locationHrefWithoutHash(window.location);
-                //triggers too early, have to delay execution
-                setTimeout(() => HTML5VideoControlsPlayerSetup("hrefObserver"), config.getPlayerInitialDelay);
+    function sortNodesBySizeAndPosition(nodes) {
+        nodes = Array.from(nodes);
+        return nodes.sort((a, b) => {
+            // Calculate area for both nodes
+            const areaA = a.getBoundingClientRect().width * a.getBoundingClientRect().height;
+            const areaB = b.getBoundingClientRect().width * b.getBoundingClientRect().height;
+
+            // Compare areas in descending order
+            if (areaA !== areaB) {
+                return areaB - areaA;
             }
-        });
-        log("[hrefObserver] observing..", L_DEBUG);
-        myHrefObserver.observe(document.body, {subtree: true, childList: true});
-    }
-    
 
-    /**
-     * Initial wait for video Element
-     * https://stackoverflow.com/a/39332340
-     */
-    function observeVideoNodes(){
-        if (videoObserver) { //cancel previous observer
-            log("[videoObserver] disconnecting", L_DEBUG);
-            videoObserver.disconnect();
+            // If areas are equal, compare top position in descending order
+            return a.getBoundingClientRect().top - b.getBoundingClientRect().top;
+        });
+    }
+
+    function selectVideoNodes(){
+        log("Starting search for DOM Video Player", L_WARN);
+        //TODO IDEA instead, check event onplaying for all video elements of a site, control the playing one.
+        let selector = "video";//:first-of-type";
+        if(config.site==='tvthek.orf'){
+            selector = ".video_wrapper video";
+        } else if (config.site==='youtube'){
+            selector = "#content video";
         }
 
-        videoObserver = new MutationObserver(mutationsList => {
-            Array.from(mutationsList)
-                .filter(mutation => mutation.type === 'childList' && mutation.addedNodes.length > 0)
-                .forEach(mutation => {
-                Array.from(mutation.addedNodes)
-                    .filter(node => node instanceof HTMLVideoElement)
-                    .forEach(node => {
-                    node.addEventListener('playing', HTML5VideoControlsPlayerSetup);
-                });
-            });
-        });
+        const allVideoEl = document.querySelectorAll(selector);
+        return allVideoEl;
+    }
 
-        videoObserver.observe(document.body, {
-            childList: true, // observe additions/removals of child nodes
-            subtree: true, // observe mutations in all descendants of the target node
-        });
+    //TODO too often video isnt playing yet
+    function choosePlayingVideo(allVideoEl){
+        for(var vidEl in allVideoEl){
+            if(isVideoPlaying(vidEl)){
+                log("Found a playing video", L_WARN);
+                console.log(vidEl)
+                return vidEl;
+            }
+        }
     }
 
     /* try to get videoplayers */
     function getDOMVideoNode(){
-        log("Starting search for DOM Video Player", L_DEBUG);
-        //TODO IDEA instead, check event onplaying for all video elements of a site, control the playing one.
-        let selector = "video:first-of-type";
-        if(config.site==='tvthek.orf'){
-            selector = ".video_wrapper video";
-        }
-
-        let allVideoEl = document.querySelectorAll(selector); //leave as jquery obj for now
-        if(allVideoEl.lenght === 0){
-            log("No video element was found.", L_DEBUG);
-            videoEl = null;
+        const allVideoEl = selectVideoNodes();
+        if(!allVideoEl){
+            videoEl=null;
+            log("End getdomnode none found", L_WARN);
             return false;
         }
-
-        if (allVideoEl.length > 1){
-            for(let el in allVideoEl){
-                if(isVideoPlaying(el)){
-	            log("Got Videoplayer", L_DEBUG);
-                    videoEl = el;
-        	    return true;
-                }
-            }
+        if(allVideoEl.length == 1 ){
+            videoEl = allVideoEl[0];
+            log("End getdomnode found only one", L_WARN);
+            console.log(videoEl);
+            return true;
         }
-        videoEl = allVideoEl[0]; //take first player
-        return true
-    }
-
-    /*
-    Change the players playbackRate. it cant go below 0 (0=video paused but technically still playing), and seems to be usually hardcappet at 16.
-    softcapped at config.playbackRateMinimum and config.playbackRateMaximum
-    @param {double} by - the playbackRate delta
-    */
-    function changePlaybackRateBy(by){
-        try{
-            if(!playbackRatePanel) {
-                log("cant find playbackRate panel", L_ERROR);
-                DOMAppendPlaybackRatePanel();
-            }
-           
-            videoEl.playbackRate = Math.min(Math.max(videoEl.playbackRate+by, config.playbackRateMinimum), config.playbackRateMaximum);            
-            playbackRateRestore = videoEl.playbackRate;
-            playbackRatePanel.innerText = videoEl.playbackRate.toFixed(2); 
-            log("PlaybackRate changed, new: "+videoEl.playbackRate.toFixed(2));
-        } catch (e) {
-            log('Error changing playbackRate: '+e.message, L_ERROR);
-        }
-    }
-
-
-    /*
-    Insert the playbackRate panel into the site
-    */
-    function DOMAppendPlaybackRatePanel(){
+        /*if (allVideoEl.length > 1){
+        log(`Found ${allVideoEl.length} video players`, L_WARN);
+        console.log(allVideoEl); //TODO
+        videoEl = choosePlayingVideo(allVideoEl);
+        console.log(videoEl) //TODO
         if(videoEl){
-            if(!videoEl.parentElement.querySelector('#playbackRatePanel')){
-                log("adding playbackRatePanel to video", L_DEBUG);
-                let txt = config.showDefaultPlaybackRate ? "1.00" : "";
-                
-                const newDiv = document.createElement('div');
-                newDiv.id = 'playbackRatePanel';
-                newDiv.classList.add('playbackRatePanel');
-                newDiv.textContent = txt;
+            return true;
+        }
+    }*/
 
-                videoEl.parentElement.appendChild(newDiv);
-            }
-            playbackRatePanel = document.querySelector('#playbackRatePanel');
-        } else {
-            log("cant append playbackratepanel, no video el.", L_ERROR)
+        //no clear winner, take biggest video el
+        videoEl = sortNodesBySizeAndPosition(allVideoEl)[0];
+        log("End getdomnode bySizeAndPos", L_WARN);
+        console.log(videoEl);
+
+
+        //Fallback
+        //videoEl = allVideoEl[0]; //take first player
+        if(videoEl){
+            return true;
+        }
+
+    }
+
+    /*
+    Change the players pbr. it cant go below 0 (0=video paused but technically still playing), and seems to be usually hardcappet at 16.
+    softcapped at config.pbrMinimum and config.pbrMaximum
+    @param {double} by - the pbr delta
+    */
+    function changepbrBy(by){
+        maybeRestorepbr();
+
+        if(!pbrPanel) {
+            //log("cant find pbr panel", L_ERROR);
+            DOMAppendpbrPanel();
+        }
+        try{
+            const newPbr = Math.min(Math.max(videoEl.playbackRate+by, config.pbrMinimum), config.pbrMaximum).toFixed(2);
+            videoEl.playbackRate = newPbr;
+            pbrRestore = newPbr;
+            pbrPanel.innerText = newPbr;
+            log("pbr changed, new: "+newPbr);
+        } catch (e) {
+            log('Error changing pbr: '+e.message, L_ERROR);
         }
     }
+
+
+    /*
+    Insert the pbr panel into the site
+    */
+    function DOMAppendpbrPanel(){
+        if(!videoEl){
+            log("cant append pbrpanel, no video el.", L_ERROR)
+            return;
+        }
+        try{
+            if(!videoEl.parentElement.querySelector(ID_PBR_PANEL)){
+                if(pbrPanel){
+                    try{
+                        let oldPbr = document.querySelector(ID_PBR_PANEL);
+                        oldPbr.parentNode.removeChild(oldPbr);
+                    } catch (e){log("error deleting old pbrPanel "+e.message, L_ERROR);}
+                }
+
+                log("adding pbrPanel to video", L_DEBUG);
+                let txt = config.showDefaultpbr ? "1.00" : "";
+
+                const newDiv = document.createElement('div');
+                newDiv.id = ID_PBR_PANEL.slice(1);
+                newDiv.classList.add(ID_PBR_PANEL.slice(1));
+                newDiv.textContent = txt;
+                maybeInsertStyles();
+                videoEl.parentElement.appendChild(newDiv);
+                pbrPanel = document.querySelector(ID_PBR_PANEL);
+            }
+        } catch (e){log("error injecting pbrPanel "+e.message, L_ERROR);}
+    }
+
 
     function isVideoPlaying(videoNode){
-        videoNode.currentTime > 0 && !videoNode.paused && !videoNode.ended; //&&.readyState > 2
-    }    
+        return videoNode?.currentTime > 0 && !videoNode.paused && !videoNode.ended && videoNode.readyState > 2;
+    }
 
-    function isInViewport(element, pctInViewport=40) {
-        const bRect = element.getBoundingClientRect();     
+    function inViewport(element, minPct=40) {
+        const bRect = element.getBoundingClientRect();
         const intersectionHeight = Math.min(bRect.bottom, window.innerHeight) - Math.max(bRect.top, 0);
-        const percentageInView = (intersectionHeight / element.clientHeight) * 100;
-      
-        return percentageInView >= pctInViewport;
-      }
+        const pctVisible = (intersectionHeight / element.clientHeight) * 100;
+
+        return pctVisible >= minPct;
+    }
 
     /*
     Focus the player
     */
     function focusPlayer(){
         if (config.site === 'netflix'){ //netflix player is always focused
-            return; 
+            return;
         }
-        const hasFocusedInput = document.activeElement && document.activeElement.tagName.toLowerCase() === 'input';
-        
 
-
-        if(hasFocusedInput || !isVideoPlaying(videoEl) || !isInViewport(videoEl, 80)){
-            log("wont focus player, because an <input> element is currently focused, video isnt playing or in viewport", L_DEBUG)
+        //todo after no input to input element for Xs, grab focus
+        if((document.activeElement && document.activeElement.tagName.toLowerCase() === 'input') || !isVideoPlaying(videoEl) || !inViewport(videoEl, 80)){
             return;
         }
 
@@ -294,7 +352,7 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
         } else {
             videoEl.focus();
         }
-        log("focusing video player", L_DEBUG);
+        //log("focusing video player", L_DEBUG);
     }
 
 
@@ -317,29 +375,49 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
                 //youtube added this functionality at some point in 2023
                 log("didnt play/pause, normal shortcut should work", L_DEBUG);
                 return;
-            } 
-    
+            }
+
             if(videoEl.paused){
                 videoEl.play();
             } else {
                 videoEl.pause();
             }
-        
+
             log("play/pause triggered");
         });
 
-        Mousetrap.bind(config.hotkeys.playbackRateUp, function(){changePlaybackRateBy(config.playbackRateChange); return false;});
-        Mousetrap.bind(config.hotkeys.playbackRateDown, function(){changePlaybackRateBy(-config.playbackRateChange); return false;});
-        Mousetrap.bind(config.hotkeys.playbackRateUpSlow, function(){changePlaybackRateBy(config.playbackRateSlowChange); return false;});
-        Mousetrap.bind(config.hotkeys.playbackRateDownSlow, function(){changePlaybackRateBy(-config.playbackRateSlowChange); return false;});
+        Mousetrap.bind(config.hotkeys.pbrUp, function(){changepbrBy(config.pbrChange); return false;});
+        Mousetrap.bind(config.hotkeys.pbrDown, function(){changepbrBy(-config.pbrChange); return false;});
+        Mousetrap.bind(config.hotkeys.pbrUpSlow, function(){changepbrBy(config.pbrSlowChange); return false;});
+        Mousetrap.bind(config.hotkeys.pbrDownSlow, function(){changepbrBy(-config.pbrSlowChange); return false;});
     }
 
-    // Add our styles to page
-    GM_addStyle(multilineCssStr(function () {/*!
-        .playbackRatePanel {
-            color: rgb(207, 207, 207);
+
+    /*
+    Make GM_addStyle less of a pain with this awesome function (stackoverflow.com/q/27927950/3665531)
+    @param {Function} dummyFunc - a function that should only contain a multiline JS comment in which normal css syntax appears. The string has to start with /*!
+    */
+    function multilineCssStr(dummyFunc) {
+        let str = dummyFunc.toString();
+        str = str.replace (/^[^\/]+\/\*!?/, '') // Strip function () { /*!
+            .replace (/\s*\*\/\s*\}\s*$/, '') // Strip */ }
+            .replace (/\/\/.+$/gm, ''); // Double-slash comments wreck CSS. Strip them.
+        return str;
+    }
+
+    function locationHrefWithoutHash(location){
+        return location.href.replace(location.hash, "");
+    }
+
+    function maybeInsertStyles(){
+        try{
+            if (!pbrPanel || window.getComputedStyle(pbrPanel)["z-index"] != 9999998123){
+                // Add our styles to page
+                GM_addStyle(multilineCssStr(function () {
+                    /*!
+        .pbrPanel, #pbrPanel {
             font-size: 14px;
-            z-index: 999999;
+            z-index: 9999998123;
             position: absolute;
             right: 2px;
             top: 2px;
@@ -355,23 +433,14 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
         .player-button-play{
             display:none!important;
         }
-    */}));
-
-    /*
-    Make GM_addStyle less of a pain with this awesome function (stackoverflow.com/q/27927950/3665531)
-    @param {Function} dummyFunc - a function that should only contain a multiline JS comment in which normal css syntax appears. The string has to start with /*!
-    */
-    function multilineCssStr(dummyFunc) {
-        let str = dummyFunc.toString();
-        str = str.replace (/^[^\/]+\/\*!?/, '') // Strip function () { /*!
-            .replace (/\s*\*\/\s*\}\s*$/, '') // Strip */ }
-            .replace (/\/\/.+$/gm, ''); // Double-slash comments wreck CSS. Strip them.
-        return str;
+        */
+                }));
+            }
+        } catch (e) {
+            log('Error adding styles: '+e.message, L_ERROR);
+        }
     }
 
-     function locationHrefWithoutHash(location){
-        return location.href.replace(location.hash, "");
-    }
 
     /*
     Print console messages, if corresponding configs are set.
@@ -380,7 +449,7 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
     @param {String} lvl - the log level
     */
     function log(msg, lvl = L_INFO) {
-        const cmsg = `[${config.scriptName} [${LOGLVLLABELS[lvl]}]: ${msg}`;
+        const cmsg = `${config.scriptName} [${LOGLVLLABELS[lvl]}]: ${msg}`;
         if(config.logLevel === L_NOTHING){
             return;
         } else if ((lvl >= config.logLevel)) {
@@ -399,4 +468,36 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
             }
         }
     }
+
+
+
+    /**
+     * Initial wait for video Element
+     * https://stackoverflow.com/a/39332340
+     */
+    /*
+    function observeVideoNodes(){
+        if (videoObserver) { //cancel previous observer
+            log("[videoObserver] disconnecting", L_DEBUG);
+            videoObserver.disconnect();
+        }
+
+        videoObserver = new MutationObserver(mutationsList => {
+            Array.from(mutationsList)
+                .filter(mutation => mutation.type === 'childList' && mutation.addedNodes.length > 0)
+                .forEach(mutation => {
+                Array.from(mutation.addedNodes)
+                    .filter(node => node instanceof HTMLVideoElement)
+                    .forEach(node => {
+                    node.addEventListener('playing', HTML5VideoControlsPlayerSetup);
+                });
+            });
+        });
+
+        videoObserver.observe(document.body, {
+            childList: true, // observe additions/removals of child nodes
+            subtree: true, // observe mutations in all descendants of the target node
+        });
+    }*/
+
 })();
