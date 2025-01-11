@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HTML5 Video Controls
 // @namespace    @@https://github.com/wsoyka/userscripts/raw/master/html5_video_controls.user.js
-// @version      1.07
+// @version      1.08
 // @description  add hotkeys and other functionality to html5 video players
 // @author       wsoyka
 
@@ -21,7 +21,7 @@
 // @match        http*://*.primevideo.com/*
 // @match        http*://*.hbo.com/*
 // @match        http*://*.disneyplus.com/*
-
+// @match        http*://media.ccc.de/*
 
 
 // @grant    	 GM_addStyle
