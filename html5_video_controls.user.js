@@ -420,7 +420,8 @@ Some UIs ignore the players attributes after initialization, meaning the UI will
             display: inline;
             width: 35px;
             height: 24px;
-            color: #80ff02;
+            color: white;
+            mix-blend-mode: difference;
             user-select: none;
         }
         #js-paused-overlay {
